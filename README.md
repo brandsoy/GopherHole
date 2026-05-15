@@ -1,33 +1,45 @@
 # GopherHole
 
+[![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![TUI](https://img.shields.io/badge/UI-Bubble%20Tea%20%2B%20Lip%20Gloss-ff69b4)](https://github.com/charmbracelet/bubbletea)
+
 A terminal UI for scanning folders, discovering Git repositories, and viewing their status in one place.
 
-Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) + [Lip Gloss](https://github.com/charmbracelet/lipgloss).
+## Why GopherHole?
 
----
+If you juggle many repos, checking each one manually is slow and noisy. GopherHole gives you a single dashboard to:
+
+- find repos across multiple root folders
+- instantly spot dirty/untracked/clean states
+- jump straight into tools (`lazygit`, `nvim`, `yazi`, shell)
+
+## Demo
+
+> Add your screenshots/GIFs to `docs/assets/` and update these links.
+
+![GopherHole Screenshot](docs/assets/screenshot.png)
+
+<!-- ![GopherHole Demo GIF](docs/assets/demo.gif) -->
 
 ## Features
 
 - Recursively scans configured folders for Git repos
 - Skips heavy dirs like `node_modules`
 - Groups repos by status (changes, untracked, clean, errors)
-- Shows branch overview (ahead/behind + current branch working-tree status)
+- Branch overview (ahead/behind + current branch working-tree status)
 - Fast keyboard navigation
-- Optional integrations:
-  - `lazygit`
-  - `nvim`
-  - `yazi`
-  - shell in repo dir
-
----
+- Tool integrations:
+  - `g` → `lazygit`
+  - `v` → `nvim`
+  - `y` → `yazi`
+  - `o` → shell in repo dir
 
 ## Requirements
 
 - Go 1.22+
 - Git
 - Optional: `lazygit`, `nvim`, `yazi`
-
----
 
 ## Install
 
@@ -49,15 +61,13 @@ INSTALL_DIR=/usr/local/bin ./install.sh
 go build -o gopherhole .
 ```
 
-Then place it somewhere in your `PATH`, e.g.:
+Then place it somewhere in your `PATH`:
 
 ```bash
 mkdir -p "$HOME/.local/bin"
 cp gopherhole "$HOME/.local/bin/gopherhole"
 chmod +x "$HOME/.local/bin/gopherhole"
 ```
-
----
 
 ## Configuration
 
@@ -84,20 +94,15 @@ Config format:
 
 ```json
 {
-  "folders": [
-    "/path/to/work",
-    "/path/to/personal"
-  ]
+  "folders": ["/path/to/work", "/path/to/personal"]
 }
 ```
 
-You can override config location:
+Override config location:
 
 ```bash
 gopherhole -config /path/to/repos.config.json
 ```
-
----
 
 ## Usage
 
@@ -115,25 +120,14 @@ gopherhole
 - `o` — open shell in selected repo
 - `q` — quit
 
----
-
 ## Cross-compile
 
 ```bash
-# Linux amd64
 GOOS=linux GOARCH=amd64 go build -o gopherhole-linux-amd64 .
-
-# Linux arm64
 GOOS=linux GOARCH=arm64 go build -o gopherhole-linux-arm64 .
-
-# macOS arm64 (Apple Silicon)
 GOOS=darwin GOARCH=arm64 go build -o gopherhole-darwin-arm64 .
-
-# macOS amd64 (Intel)
 GOOS=darwin GOARCH=amd64 go build -o gopherhole-darwin-amd64 .
 ```
-
----
 
 ## Notes
 

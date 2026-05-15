@@ -30,4 +30,4 @@ esac
 
 echo "\nNext steps:"
 echo "  ${BINARY_NAME} init"
-echo "  ${BINARY_NAME}"
+rcho "  ${BINARY_NAME}"
