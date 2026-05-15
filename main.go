@@ -16,6 +16,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+type BranchStatus struct {
+	Name      string
+	IsCurrent bool
+	Staged    bool
+	Modified  bool
+	Untracked bool
+	Ahead     int
+	Behind    int
+}
+
 type RepoStatus struct {
 	Path      string
 	Branch    string
@@ -24,6 +34,7 @@ type RepoStatus struct {
 	Untracked bool
 	Ahead     int
 	Behind    int
+	Branches  []BranchStatus
 	Error     string
 }
 
@@ -37,6 +48,18 @@ type scanDoneMsg struct {
 }
 
 type lazygitDoneMsg struct {
+	err error
+}
+
+type nvimDoneMsg struct {
+	err error
+}
+
+type shellDoneMsg struct {
+	err error
+}
+
+type yaziDoneMsg struct {
 	err error
 }
 
@@ -59,10 +82,22 @@ var (
 	dirtyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	warnStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	panelStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("63")).Padding(0, 1)
 )
 
 func main() {
-	configPath := flag.String("config", "repos.config.json", "Path to config file")
+	defaultConfig := defaultConfigPath()
+
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		if err := runInit(defaultConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "init error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Created config at %s\n", defaultConfig)
+		return
+	}
+
+	configPath := flag.String("config", defaultConfig, "Path to config file")
 	flag.Parse()
 
 	m := model{configPath: *configPath, loading: true}
@@ -98,6 +133,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = ""
 		}
 		return m, nil
+	case nvimDoneMsg:
+		if msg.err != nil {
+			m.notice = "nvim failed: " + msg.err.Error()
+		} else {
+			m.notice = ""
+		}
+		return m, nil
+	case shellDoneMsg:
+		if msg.err != nil {
+			m.notice = "shell failed: " + msg.err.Error()
+		} else {
+			m.notice = ""
+		}
+		return m, nil
+	case yaziDoneMsg:
+		if msg.err != nil {
+			m.notice = "yazi failed: " + msg.err.Error()
+		} else {
+			m.notice = ""
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -118,6 +174,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.notice = ""
 			return m, openLazygitCmd(repoPath)
+		case "v":
+			if len(m.statuses) == 0 {
+				return m, nil
+			}
+			repoPath := m.statuses[m.selected].Path
+			if _, err := exec.LookPath("nvim"); err != nil {
+				m.notice = "nvim not installed"
+				return m, nil
+			}
+			m.notice = ""
+			return m, openNvimCmd(repoPath)
+		case "o":
+			if len(m.statuses) == 0 {
+				return m, nil
+			}
+			repoPath := m.statuses[m.selected].Path
+			m.notice = ""
+			return m, openShellCmd(repoPath)
+		case "y":
+			if len(m.statuses) == 0 {
+				return m, nil
+			}
+			repoPath := m.statuses[m.selected].Path
+			if _, err := exec.LookPath("yazi"); err != nil {
+				m.notice = "yazi not installed"
+				return m, nil
+			}
+			m.notice = ""
+			return m, openYaziCmd(repoPath)
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
@@ -139,7 +224,7 @@ func (m model) View() string {
 		return "\n  " + errorStyle.Render("Error: "+m.err.Error()) + "\n\n  Press r to retry, q to quit."
 	}
 
-	help := "↑/↓ move • g open lazygit • r rescan • q quit"
+	help := "↑/↓ move • g lazygit • v nvim • y yazi • o shell • r rescan • q quit"
 	if m.notice != "" {
 		help += " • " + m.notice
 	}
@@ -148,14 +233,22 @@ func (m model) View() string {
 		return header + warnStyle.Render("No Git repositories found.")
 	}
 
-	left := m.renderList()
-	right := m.renderDetail()
-	return header + lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+	left := panelStyle.Render(m.renderList())
+	right := panelStyle.Render(m.renderDetail())
+	return header + lipgloss.JoinHorizontal(lipgloss.Top, left, "    ", right)
 }
 
 func (m model) renderList() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Repositories") + "\n")
+
+	const (
+		nameW   = 28
+		stateW  = 22
+		countW  = 8
+		dirtyW  = 6
+		untrkW  = 10
+	)
 
 	lastGroup := -1
 	for i, s := range m.statuses {
@@ -165,15 +258,17 @@ func (m model) renderList() string {
 				b.WriteString("\n")
 			}
 			b.WriteString(dimStyle.Render(statusGroupLabel(group)) + "\n")
+			header := fmt.Sprintf("  %-*s %-*s %*s %*s %*s", nameW, "REPO", stateW, "STATE", countW, "BRANCHES", dirtyW, "DIRTY", untrkW, "UNTRACKED")
+			b.WriteString(dimStyle.Render(header) + "\n")
 			lastGroup = group
 		}
 
+		name := truncateRight(filepath.Base(s.Path), nameW)
 		state := stateText(s)
-		line := fmt.Sprintf("%s  %s", filepath.Base(s.Path), state)
+		dirtyCount, untrackedCount := branchCounts(s)
+		line := fmt.Sprintf("  %-*s %-*s %*d %*d %*d", nameW, name, stateW, state, countW, len(s.Branches), dirtyW, dirtyCount, untrkW, untrackedCount)
 		if i == m.selected {
-			line = selectedStyle.Render("› " + line)
-		} else {
-			line = "  " + line
+			line = selectedStyle.Render("›" + line[1:])
 		}
 		b.WriteString(line + "\n")
 	}
@@ -190,9 +285,24 @@ func (m model) renderDetail() string {
 		"Branch:  " + s.Branch,
 		fmt.Sprintf("Sync:    ahead %d / behind %d", s.Ahead, s.Behind),
 		"Status:  " + statusStyled,
+		"",
+		titleStyle.Render("Branches"),
+		"NAME                     STATUS       AHEAD  BEHIND",
 	}
+
+	for _, br := range s.Branches {
+		name := br.Name
+		if br.IsCurrent {
+			name = "* " + name
+		} else {
+			name = "  " + name
+		}
+		bs := branchStateText(br)
+		lines = append(lines, fmt.Sprintf("%-24s %-12s %5d %7d", name, bs, br.Ahead, br.Behind))
+	}
+
 	if s.Error != "" {
-		lines = append(lines, "Error:   "+errorStyle.Render(s.Error))
+		lines = append(lines, "", "Error:   "+errorStyle.Render(s.Error))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -202,6 +312,34 @@ func openLazygitCmd(repoPath string) tea.Cmd {
 	cmd.Dir = repoPath
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return lazygitDoneMsg{err: err}
+	})
+}
+
+func openNvimCmd(repoPath string) tea.Cmd {
+	cmd := exec.Command("nvim")
+	cmd.Dir = repoPath
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return nvimDoneMsg{err: err}
+	})
+}
+
+func openShellCmd(repoPath string) tea.Cmd {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "bash"
+	}
+	cmd := exec.Command(shell)
+	cmd.Dir = repoPath
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return shellDoneMsg{err: err}
+	})
+}
+
+func openYaziCmd(repoPath string) tea.Cmd {
+	cmd := exec.Command("yazi")
+	cmd.Dir = repoPath
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return yaziDoneMsg{err: err}
 	})
 }
 
@@ -240,12 +378,38 @@ func loadConfig(path string) (Config, error) {
 	var cfg Config
 	b, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, fmt.Errorf("config not found at %s", path)
+		}
 		return cfg, err
 	}
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+func defaultConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "repos.config.json"
+	}
+	return filepath.Join(home, ".config", "gopherhole", "repos.config.json")
+}
+
+func runInit(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("config already exists at %s", path)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	template := "{\n  \"folders\": [\n    \"/path/to/work\",\n    \"/path/to/personal\"\n  ]\n}\n"
+	return os.WriteFile(path, []byte(template), 0o644)
 }
 
 func findGitRepos(roots []string) ([]string, error) {
@@ -328,6 +492,11 @@ func getRepoStatus(repoPath string) RepoStatus {
 			s.Modified = true
 		}
 	}
+
+	branches, berr := listBranches(repoPath, s.Branch, s.Staged, s.Modified, s.Untracked)
+	if berr == nil {
+		s.Branches = branches
+	}
 	return s
 }
 
@@ -342,6 +511,43 @@ func gitOutput(repoPath string, args ...string) (string, error) {
 		return "", errors.New(msg)
 	}
 	return string(out), nil
+}
+
+func listBranches(repoPath, current string, currentStaged, currentModified, currentUntracked bool) ([]BranchStatus, error) {
+	out, err := gitOutput(repoPath, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	if err != nil {
+		return nil, err
+	}
+
+	var branches []BranchStatus
+	for _, name := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		b := BranchStatus{Name: strings.TrimSpace(name), IsCurrent: strings.TrimSpace(name) == current}
+		ab, abErr := gitOutput(repoPath, "rev-list", "--left-right", "--count", b.Name+"..."+b.Name+"@{upstream}")
+		if abErr == nil {
+			fields := strings.Fields(ab)
+			if len(fields) == 2 {
+				fmt.Sscanf(fields[0], "%d", &b.Ahead)
+				fmt.Sscanf(fields[1], "%d", &b.Behind)
+			}
+		}
+		if b.IsCurrent {
+			b.Staged = currentStaged
+			b.Modified = currentModified
+			b.Untracked = currentUntracked
+		}
+		branches = append(branches, b)
+	}
+
+	sort.Slice(branches, func(i, j int) bool {
+		if branches[i].IsCurrent != branches[j].IsCurrent {
+			return branches[i].IsCurrent
+		}
+		return strings.ToLower(branches[i].Name) < strings.ToLower(branches[j].Name)
+	})
+	return branches, nil
 }
 
 func stateText(s RepoStatus) string {
@@ -385,6 +591,42 @@ func statusGroupRank(s RepoStatus) int {
 		return 1
 	}
 	return 2
+}
+
+func truncateRight(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	if max == 1 {
+		return "…"
+	}
+	return string(r[:max-1]) + "…"
+}
+
+func branchStateText(b BranchStatus) string {
+	if b.Modified || b.Staged {
+		return dirtyStyle.Render("changes")
+	}
+	if b.Untracked {
+		return warnStyle.Render("untracked")
+	}
+	return cleanStyle.Render("clean")
+}
+
+func branchCounts(s RepoStatus) (dirty int, untracked int) {
+	for _, b := range s.Branches {
+		if b.Modified || b.Staged {
+			dirty++
+		}
+		if b.Untracked {
+			untracked++
+		}
+	}
+	return dirty, untracked
 }
 
 func statusGroupLabel(rank int) string {
