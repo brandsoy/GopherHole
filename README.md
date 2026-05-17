@@ -31,7 +31,8 @@ If you juggle many repos, checking each one manually is slow and noisy. GopherHo
 - Fast keyboard navigation
 - Tool integrations:
   - `g` → `lazygit`
-  - `v` → `nvim`
+  - `v` → `nvim` (selected repo)
+  - `e` → `nvim` (GopherHole config)
   - `y` → `yazi`
   - `o` → shell in repo dir
 
@@ -39,7 +40,42 @@ If you juggle many repos, checking each one manually is slow and noisy. GopherHo
 
 - Go 1.22+
 - Git
-- Optional: `lazygit`, `nvim`, `yazi`
+- Optional: `lazygit`, `nvim`, `yazi`, `gitleaks`
+
+## Optional tools (macOS / Linux)
+
+### lazygit
+
+- macOS (Homebrew): `brew install lazygit`
+- Linux:
+  - Debian/Ubuntu: `sudo apt install lazygit` (if available)
+  - Fedora: `sudo dnf install lazygit`
+  - Arch: `sudo pacman -S lazygit`
+
+### neovim
+
+- macOS (Homebrew): `brew install neovim`
+- Linux:
+  - Debian/Ubuntu: `sudo apt install neovim`
+  - Fedora: `sudo dnf install neovim`
+  - Arch: `sudo pacman -S neovim`
+
+### yazi
+
+- macOS (Homebrew): `brew install yazi ffmpegthumbnailer sevenzip jq poppler fd ripgrep fzf zoxide`
+- Linux:
+  - Debian/Ubuntu: `sudo apt install yazi ffmpegthumbnailer p7zip-full jq poppler-utils fd-find ripgrep fzf zoxide`
+  - Fedora: `sudo dnf install yazi ffmpegthumbnailer p7zip jq poppler-utils fd-find ripgrep fzf zoxide`
+  - Arch: `sudo pacman -S yazi ffmpegthumbnailer p7zip jq poppler fd ripgrep fzf zoxide`
+
+### gitleaks
+
+- macOS (Homebrew): `brew install gitleaks`
+- Linux:
+  - Debian/Ubuntu: `sudo apt install gitleaks` (if available)
+  - Fedora: `sudo dnf install gitleaks` (if available)
+  - Arch: `sudo pacman -S gitleaks`
+  - Fallback (all distros): download release binary from `https://github.com/gitleaks/gitleaks/releases`
 
 ## Install
 
@@ -113,11 +149,13 @@ gopherhole
 ### Keybindings
 
 - `↑/↓` or `j/k` — move selection
-- `r` — rescan
+- `r` — rescan repos
 - `g` — open selected repo in `lazygit`
 - `v` — open selected repo in `nvim`
+- `e` — open GopherHole config in `nvim`
 - `y` — open selected repo in `yazi`
 - `o` — open shell in selected repo
+- `t` — in gitleaks popup: create `LEAKS_TODO.md` in selected repo
 - `q` — quit
 
 ## Cross-compile
@@ -133,3 +171,8 @@ GOOS=darwin GOARCH=amd64 go build -o gopherhole-darwin-amd64 .
 
 Branch file-status accuracy is complete for the currently checked-out branch.
 For non-checked-out branches, commit divergence (ahead/behind) is shown.
+
+Gitleaks reports are persisted to:
+
+- `~/.local/share/gopherhole/reports/`
+- index file: `~/.local/share/gopherhole/reports/index.ndjson`
